@@ -1,6 +1,8 @@
-''''import numpy as np
+import numpy as np
 import matplotlib.pyplot as plt
 from typing import List, Tuple, Dict, Callable
+from scipy.io import wavfile
+import os
 
 class DigitalEncoder:
     """
@@ -176,6 +178,7 @@ class DigitalEncoder:
         decoded = []
         i = 0
         
+        # Assegurar que estamos processando pares completos
         while i < len(encoded_data) - 1:
             # Verificar transição
             if encoded_data[i] == 0 and encoded_data[i+1] == 1:
@@ -184,10 +187,22 @@ class DigitalEncoder:
                 decoded.append(1)  # Transição alto-baixo é 1
             else:
                 # Erro de codificação
-                print(f"Erro na decodificação Manchester na posição {i}")
+                print(f"Aviso de erro na decodificação Manchester na posição {i}, corrigindo...")
+                # Estratégia de correção: assumir o último bit válido ou 0 se for o primeiro
+                if decoded:
+                    decoded.append(decoded[-1])  # Repetir o último bit decodificado
+                else:
+                    decoded.append(0)  # Se for o primeiro bit, assume 0
             
             i += 2  # Avança dois bits (um símbolo Manchester completo)
         
+        # Verificar se o comprimento está correto para dados ASCII (múltiplo de 8)
+        if len(decoded) % 8 != 0:
+            # Adicionar bits para completar o último byte
+            padding_needed = 8 - (len(decoded) % 8)
+            decoded.extend([0] * padding_needed)
+            print(f"Adicionados {padding_needed} bits de padding para completar o último byte")
+            
         return decoded
     
     def nrz_decode(self, encoded_data: List[int]) -> List[int]:
@@ -347,6 +362,46 @@ class DigitalEncoder:
         
         plt.tight_layout()
         plt.show()
+    
+    def save_audio_waveform(self, data: List[int], filename: str = "digital_signal.wav", 
+                           sample_rate: int = 44100, bit_rate: int = 300) -> str:
+        """
+        Converte sinal digital codificado em arquivo de áudio WAV.
+        
+        Args:
+            data: Lista de valores de sinal codificado (0s, 1s ou -1s para AMI)
+            filename: Nome do arquivo de saída
+            sample_rate: Taxa de amostragem em Hz
+            bit_rate: Taxa de bits por segundo
+            
+        Returns:
+            Caminho para o arquivo de áudio salvo
+        """
+        # Determinar amostras por bit
+        samples_per_bit = int(sample_rate / bit_rate)
+        
+        # Expandir cada bit do sinal para várias amostras
+        audio_signal = []
+        for value in data:
+            # Converter o valor digital (-1, 0, 1) para uma amplitude de áudio (-0.5, 0, 0.5)
+            # Multiplica por 0.5 para evitar clipping
+            amplitude = float(value) * 0.5
+            
+            # Repetir o valor para criar um pulso com duração adequada
+            audio_signal.extend([amplitude] * samples_per_bit)
+        
+        # Converter para array numpy
+        audio_array = np.array(audio_signal, dtype=np.float32)
+        
+        # Normalizar entre -1 e 1 para evitar clipping
+        if np.max(np.abs(audio_array)) > 0:
+            audio_array = audio_array / np.max(np.abs(audio_array)) * 0.9
+        
+        # Salvar como arquivo WAV
+        wavfile.write(filename, sample_rate, audio_array)
+        
+        # Retornar o caminho absoluto do arquivo salvo
+        return os.path.abspath(filename)
 
 
 class TransmissionSystem:
@@ -453,6 +508,29 @@ class TransmissionSystem:
         
         return output_data, binary_data, decoded_data
     
+    def save_audio(self, encoded_data: List[int], method: str, filename: str = None, 
+                  bit_rate: int = 300) -> str:
+        """
+        Salva os dados codificados como arquivo de áudio.
+        
+        Args:
+            encoded_data: Dados codificados a serem salvos
+            method: Método de codificação utilizado
+            filename: Nome do arquivo (opcional)
+            bit_rate: Taxa de bits por segundo
+            
+        Returns:
+            Caminho do arquivo salvo
+        """
+        # Criar nome de arquivo se não fornecido
+        if filename is None:
+            filename = f"encoded_{method}_{len(encoded_data)}_bits.wav"
+        
+        # Salvar como áudio
+        audio_path = self.encoder.save_audio_waveform(encoded_data, filename, bit_rate=bit_rate)
+        
+        return audio_path
+    
     def visualize_menu(self, binary_data, encoded_data, transmitted_data, decoded_data, encoding_method, noise_level):
         """
         Exibe um menu para selecionar quais gráficos visualizar.
@@ -464,10 +542,11 @@ class TransmissionSystem:
             print("3. Visualizar dados transmitidos (com ruído)")
             print("4. Visualizar dados decodificados")
             print("5. Visualizar todos os gráficos")
-            print("6. Voltar ao menu principal")
+            print("6. Salvar como áudio")
+            print("7. Voltar ao menu principal")
             
             try:
-                choice = int(input("\nEscolha uma opção (1-6): "))
+                choice = int(input("\nEscolha uma opção (1-7): "))
                 
                 if choice == 1:
                     print("\nOs dados representados são digitais (sequências de 0s e 1s).")
@@ -489,195 +568,220 @@ class TransmissionSystem:
                         self.encoder.visualize_waveform(transmitted_data, None, f"Dados Transmitidos (Ruído: {noise_level})")
                     self.encoder.visualize_waveform(decoded_data, None, "Dados Decodificados")
                 elif choice == 6:
+                    # Submenu para salvar áudio
+                    print("\n--- Salvar como Áudio ---")
+                    print("1. Salvar dados originais")
+                    print("2. Salvar dados codificados")
+                    print("3. Salvar dados transmitidos (com ruído)")
+                    print("4. Salvar dados decodificados")
+                    
+                    audio_choice = int(input("\nEscolha qual sinal salvar (1-4): "))
+                    
+                    # Obter taxa de bits
+                    bit_rate_str = input("Taxa de bits (Hz, padrão 300): ")
+                    bit_rate = int(bit_rate_str) if bit_rate_str else 300
+                    
+                    # Obter nome do arquivo
+                    custom_filename = input("Nome do arquivo (deixe em branco para nome automático): ")
+                    
+                    # Salvar o áudio apropriado
+                    if audio_choice == 1:
+                        filename = custom_filename or f"binary_original.wav"
+                        path = self.save_audio(binary_data, "Binary", filename, bit_rate)
+                    elif audio_choice == 2:
+                        filename = custom_filename or f"encoded_{encoding_method}.wav"
+                        path = self.save_audio(encoded_data, encoding_method, filename, bit_rate)
+                    elif audio_choice == 3:
+                        filename = custom_filename or f"transmitted_{encoding_method}_noise_{noise_level}.wav"
+                        path = self.save_audio(transmitted_data, f"{encoding_method}_noise", filename, bit_rate)
+                    elif audio_choice == 4:
+                        filename = custom_filename or f"decoded_{encoding_method}.wav"
+                        path = self.save_audio(decoded_data, "Decoded", filename, bit_rate)
+                    else:
+                        print("Opção inválida.")
+                        continue
+                    
+                    print(f"\nÁudio salvo em: {path}")
+                    
+                elif choice == 7:
                     break
                 else:
                     print("Opção inválida, tente novamente.")
             except ValueError:
-                print("Entrada inválida. Digite um número entre 1 e 6.")
+                print("Entrada inválida. Digite um número entre 1 e 7.")
 
 
-# Exemplo de uso
-if __name__ == "__main__":
-    # Criar sistema de transmissão
+# Menu principal com interface de texto
+def main_menu():
     ts = TransmissionSystem()
     
-    # Dados de entrada
-    input_text = "Hello, World!"
-    print(f"Texto original: {input_text}")
-    
-    # Lista de métodos disponíveis
-    methods = ts.encoder.get_available_encodings()
-    print(f"Métodos de codificação disponíveis: {methods}")
-    
-    # Realizar transmissão usando Manchester
-    output_text, original_bits, decoded_bits = ts.transmit(
-        input_text, 
-        encoding_method="Manchester",
-        noise_level=0.01,  # 1% de ruído
-        visualize=True
-    )
-    
-    print(f"Bits originais: {original_bits[:24]}...")
-    print(f"Bits decodificados: {decoded_bits[:24]}...")
-    print(f"Texto recebido: {output_text}")
-    
-    # Verificar exemplo específico BA 0000 e NA 0010
-    example = {
-        "BA": [0, 0, 0, 0],
-        "NA": [0, 0, 1, 0]
-    }
-    
-    print("\nExemplos específicos:")
-    for name, bits in example.items():
-        # Codificação Manchester
-        manchester_encoded = ts.encoder.encode(bits, "Manchester")
-        print(f"{name} ({bits}): Codificação Manchester = {manchester_encoded}")
-        
-        # Decodificação Manchester
-        manchester_decoded = ts.encoder.decode(manchester_encoded, "Manchester")
-        print(f"Decodificado = {manchester_decoded}")
-        
-        # Visualizar
-        ts.encoder.visualize_waveform(manchester_encoded, "Manchester", 
-                                   f"Exemplo {name}: {bits} codificado em Manchester")
-        
-def visualize_menu(self, binary_data: List[int], encoded_data: List[int],
-                   transmitted_data: List[int], decoded_data: List[int],
-                   encoding_method: str, noise_level: float) -> None:
-    """
-    Exibe um menu para o usuário escolher qual gráfico visualizar.
-    """
     while True:
-        print("\nEscolha o gráfico que deseja visualizar:")
-        print("1 - Entrada Binária (original)")
-        print("2 - Sinal Codificado")
-        print("3 - Sinal Transmitido (com ruído)")
-        print("4 - Sinal Decodificado")
-        print("5 - Todos os gráficos")
-        print("0 - Sair da visualização")
+        print("\n============ SISTEMA DE CODIFICAÇÃO DIGITAL ============")
+        print("1. Transmitir dados")
+        print("2. Visualizar métodos de codificação disponíveis")
+        print("3. Analisar exemplos específicos (BA 0000, NA 0010)")
+        print("4. Sobre dados digitais")
+        print("5. Converter sinal para áudio")
+        print("6. Sair")
         
-        choice = input("Opção: ")
-        
-        if choice == "1":
-            self.encoder.visualize_waveform(binary_data, title="Entrada Binária (Original)")
-        elif choice == "2":
-            self.encoder.visualize_waveform(encoded_data, method=encoding_method, title="Sinal Codificado")
-        elif choice == "3":
-            self.encoder.visualize_waveform(transmitted_data, title=f"Sinal Transmitido (Ruído: {noise_level})")
-        elif choice == "4":
-            self.encoder.visualize_waveform(decoded_data, title="Sinal Decodificado")
-        elif choice == "5":
-            self.encoder.visualize_waveform(binary_data, title="Entrada Binária (Original)")
-            self.encoder.visualize_waveform(encoded_data, method=encoding_method, title="Sinal Codificado")
-            self.encoder.visualize_waveform(transmitted_data, title=f"Sinal Transmitido (Ruído: {noise_level})")
-            self.encoder.visualize_waveform(decoded_data, title="Sinal Decodificado")
-        elif choice == "0":
-            print("Encerrando visualização.")
-            break
-        else:
-            print("Opção inválida. Tente novamente.")
-'''
-
-import wave
-import numpy as np
-import matplotlib.pyplot as plt
-
-# Dicionário de sílabas para código Manchester
-syllable_code = {
-    'Ba': '1001',
-    'Na': '0101',
-    # Adicione mais sílabas conforme necessário
-}
-
-# Configurações de áudio
-SAMPLE_RATE = 44100  # Hz
-BIT_DURATION = 0.2  # segundos por bit
-FREQ_HIGH = 1200    # Hz para bit 1
-FREQ_LOW = 600       # Hz para bit 0
-
-def generate_manchester_signal(bits):
-    """Gera um sinal Manchester para uma sequência de bits"""
-    samples_per_bit = int(SAMPLE_RATE * BIT_DURATION)
-    t = np.linspace(0, BIT_DURATION, samples_per_bit, endpoint=False)
-    
-    signal = np.array([])
-    
-    for bit in bits:
-        if bit == '1':
-            # Primeira metade: 1 (alta frequência), segunda metade: 0 (baixa frequência)
-            part1 = np.sin(2 * np.pi * FREQ_HIGH * t[:samples_per_bit//2]) * 0.5
-            part2 = np.sin(2 * np.pi * FREQ_LOW * t[samples_per_bit//2:]) * 0.5
-        else:
-            # Primeira metade: 0 (baixa frequência), segunda metade: 1 (alta frequência)
-            part1 = np.sin(2 * np.pi * FREQ_LOW * t[:samples_per_bit//2]) * 0.5
-            part2 = np.sin(2 * np.pi * FREQ_HIGH * t[samples_per_bit//2:]) * 0.5
-        
-        signal = np.concatenate((signal, part1, part2))
-    
-    return signal
-
-def text_to_manchester(text):
-    """Converte texto para sequência Manchester"""
-    words = text.split()
-    manchester_bits = ""
-    
-    for word in words:
-        syllables = [word[i:i+2] for i in range(0, len(word), 2)]
-        for syllable in syllables:
-            if syllable in syllable_code:
-                manchester_bits += syllable_code[syllable]
+        try:
+            choice = int(input("\nEscolha uma opção (1-6): "))
+            
+            if choice == 1:
+                # Submenu de transmissão
+                input_text = input("\nDigite o texto a ser transmitido: ")
+                
+                # Escolher método de codificação
+                methods = ts.encoder.get_available_encodings()
+                print("\nMétodos de codificação disponíveis:")
+                for i, method in enumerate(methods, 1):
+                    print(f"{i}. {method}")
+                
+                method_idx = int(input("\nEscolha um método de codificação (número): ")) - 1
+                if 0 <= method_idx < len(methods):
+                    encoding_method = methods[method_idx]
+                else:
+                    print("Opção inválida, usando Manchester como padrão.")
+                    encoding_method = "Manchester"
+                
+                # Configurar nível de ruído
+                noise_str = input("\nNível de ruído (0.0 a 1.0, padrão 0.0): ")
+                try:
+                    noise_level = float(noise_str) if noise_str else 0.0
+                    if not (0 <= noise_level <= 1):
+                        print("Valor fora do intervalo permitido, usando 0.0.")
+                        noise_level = 0.0
+                except ValueError:
+                    print("Valor inválido, usando 0.0.")
+                    noise_level = 0.0
+                
+                # Realizar transmissão
+                output_text, original_bits, decoded_bits = ts.transmit(
+                    input_text, 
+                    encoding_method=encoding_method,
+                    noise_level=noise_level,
+                    visualize=True  # Agora o menu de visualização será exibido
+                )
+                
+                print(f"\nTexto original: {input_text}")
+                print(f"Bits originais: {original_bits[:24]}..." if len(original_bits) > 24 else f"Bits originais: {original_bits}")
+                print(f"Bits decodificados: {decoded_bits[:24]}..." if len(decoded_bits) > 24 else f"Bits decodificados: {decoded_bits}")
+                print(f"Texto recebido: {output_text}")
+                
+                # Perguntar se deseja salvar como áudio
+                save_audio = input("\nDeseja salvar o sinal codificado como áudio? (s/n): ")
+                if save_audio.lower() == 's':
+                    # Obter taxa de bits
+                    bit_rate_str = input("Taxa de bits (Hz, padrão 300): ")
+                    bit_rate = int(bit_rate_str) if bit_rate_str else 300
+                    
+                    # Obter nome do arquivo
+                    filename = input("Nome do arquivo (deixe em branco para nome automático): ")
+                    if not filename:
+                        filename = f"encoded_{encoding_method}_{input_text[:10]}.wav"
+                    
+                    # Salvar como áudio
+                    audio_path = ts.save_audio(ts.encoder.encode(original_bits, encoding_method), 
+                                              encoding_method, filename, bit_rate)
+                    print(f"\nÁudio salvo em: {audio_path}")
+                
+            elif choice == 2:
+                methods = ts.encoder.get_available_encodings()
+                print("\nMétodos de codificação disponíveis:")
+                for i, method in enumerate(methods, 1):
+                    print(f"{i}. {method}")
+                
+                input("\nPressione Enter para continuar...")
+                
+            elif choice == 3:
+                # Análise de exemplos específicos
+                print("\n=== Análise de Exemplos Específicos ===")
+                print("BA (Bi-Alternate): 0000")
+                print("NA (Non-Alternate): 0010")
+                
+                # Exemplos de codificação
+                bits_example = "0000"
+                
+                print("\nBA (Bi-Alternate Mark Inversion) para bits '0000':")
+                ba_encoded = ts.encoder.bami_encode(bits_example)
+                print("Codificado: ", end="")
+                for bit in ba_encoded:
+                    print("▀" if bit == 1 else "_", end="")
+                
+                print("\n\nNA (Non-Alternate Mark Inversion) para bits '0010':")
+                na_encoded = ts.encoder.nami_encode("0010")
+                print("Codificado: ", end="")
+                for bit in na_encoded:
+                    print("▀" if bit == 1 else "_", end="")
+                
+                input("\nPressione Enter para continuar...")
+                
+            elif choice == 4:
+                # Sobre dados digitais
+                print("\n=== Sobre Dados Digitais ===")
+                print("Dados digitais são representações discretas de informação usando sistemas binários.")
+                print("Eles são a base para todas as formas modernas de comunicação eletrônica e armazenamento.")
+                print("\nCodificação de Linha é a forma como os bits são representados em um sinal físico.")
+                print("Diferentes métodos de codificação oferecem vantagens em termos de:")
+                print("- Sincronização de clock")
+                print("- Detecção de erros")
+                print("- Eficiência de largura de banda")
+                print("- Imunidade ao ruído")
+                
+                input("\nPressione Enter para continuar...")
+                
+            elif choice == 5:
+                # Converter sinal para áudio
+                print("\n=== Converter Sinal para Áudio ===")
+                
+                # Input do usuário para texto
+                input_text = input("Digite o texto para converter em áudio: ")
+                
+                # Escolher método de codificação
+                methods = ts.encoder.get_available_encodings()
+                print("\nMétodos de codificação disponíveis:")
+                for i, method in enumerate(methods, 1):
+                    print(f"{i}. {method}")
+                
+                method_idx = int(input("\nEscolha um método de codificação (número): ")) - 1
+                if 0 <= method_idx < len(methods):
+                    encoding_method = methods[method_idx]
+                else:
+                    print("Opção inválida, usando Manchester como padrão.")
+                    encoding_method = "Manchester"
+                
+                # Obter taxa de bits
+                bit_rate_str = input("Taxa de bits (Hz, padrão 300): ")
+                bit_rate = int(bit_rate_str) if bit_rate_str else 300
+                
+                # Obter nome do arquivo
+                filename = input("Nome do arquivo (deixe em branco para nome automático): ")
+                if not filename:
+                    filename = f"encoded_{encoding_method}_{input_text[:10]}.wav"
+                
+                # Converter texto para bits
+                bits = ts.text_to_bits(input_text)
+                
+                # Salvar como áudio
+                audio_path = ts.save_audio(ts.encoder.encode(bits, encoding_method), 
+                                          encoding_method, filename, bit_rate)
+                print(f"\nÁudio salvo em: {audio_path}")
+                
+                input("\nPressione Enter para continuar...")
+                
+            elif choice == 6:
+                print("\nSaindo do sistema...")
+                break
+                
             else:
-                print(f"Aviso: Sílabas '{syllable}' não encontrada no dicionário")
-    
-    return manchester_bits
+                print("\nOpção inválida. Por favor, escolha entre 1 e 6.")
+                
+        except ValueError:
+            print("\nEntrada inválida. Por favor, insira um número válido.")
+        except Exception as e:
+            print(f"\nOcorreu um erro: {e}")
 
-def save_audio(signal, filename):
-    """Salva o sinal como arquivo WAV"""
-    signal_normalized = np.int16((signal / np.max(np.abs(signal))) * 32767)
-    with wave.open(filename, 'w') as wav_file:
-        wav_file.setnchannels(1)
-        wav_file.setsampwidth(2)
-        wav_file.setframerate(SAMPLE_RATE)
-        wav_file.writeframes(signal_normalized.tobytes())
 
-def plot_signal(signal, bits, samples_to_show=2000):
-    """Plota uma parte do sinal para visualização"""
-    plt.figure(figsize=(12, 4))
-    plt.plot(signal[:samples_to_show])
-    
-    # Adiciona marcações de bits
-    samples_per_bit = int(SAMPLE_RATE * BIT_DURATION)
-    for i, bit in enumerate(bits[:4]):  # Mostra apenas os primeiros 4 bits para clareza
-        x_pos = i * samples_per_bit + samples_per_bit//2
-        if x_pos < samples_to_show:
-            plt.text(x_pos, 0.6, bit, ha='center')
-    
-    plt.title("Sinal Manchester (primeiros bits)")
-    plt.xlabel("Amostras")
-    plt.ylabel("Amplitude")
-    plt.grid(True)
-    plt.show()
-
-# Exemplo de uso
+# Executa o menu principal quando o script é executado diretamente
 if __name__ == "__main__":
-    # Entrada do usuário
-    input_text = input("Digite a palavra de 4 sílabas (ex: BaNaBaNa): ")
-    
-    # Verifica se tem 4 sílabas
-    if len(input_text) != 8:
-        print("Erro: A palavra deve ter 4 sílabas (8 caracteres)")
-    else:
-        # Converte para Manchester
-        manchester_bits = text_to_manchester(input_text)
-        print(f"Código Manchester: {manchester_bits}")
-        
-        # Gera o sinal
-        signal = generate_manchester_signal(manchester_bits)
-        
-        # Salva o áudio
-        output_file = "manchester_audio.wav"
-        save_audio(signal, output_file)
-        print(f"Áudio gerado e salvo como {output_file}")
-        
-        # Mostra o gráfico
-        plot_signal(signal, manchester_bits)
+    main_menu()

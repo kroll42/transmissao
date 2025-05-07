@@ -435,35 +435,65 @@ class TransmissionSystem:
         # Converter entrada para binário
         binary_data = self.string_to_binary(input_data)
         
-        if visualize:
-            # Visualizar dados originais
-            self.encoder.visualize_waveform(binary_data, None, "Dados Binários Originais")
-        
         # Codificar
         encoded_data = self.encoder.encode(binary_data, encoding_method)
-        
-        if visualize:
-            # Visualizar dados codificados
-            self.encoder.visualize_waveform(encoded_data, encoding_method, f"Dados Codificados ({encoding_method})")
         
         # Simular canal com ruído
         transmitted_data = self.simulate_channel(encoded_data, noise_level)
         
-        if visualize and noise_level > 0:
-            # Visualizar dados transmitidos com ruído
-            self.encoder.visualize_waveform(transmitted_data, None, f"Dados Transmitidos (Ruído: {noise_level})")
-        
         # Decodificar
         decoded_data = self.encoder.decode(transmitted_data, encoding_method)
-        
-        if visualize:
-            # Visualizar dados decodificados
-            self.encoder.visualize_waveform(decoded_data, None, "Dados Decodificados")
         
         # Converter binário de volta para string
         output_data = self.binary_to_string(decoded_data)
         
+        # Visualizar conforme selecionado pelo usuário
+        if visualize:
+            self.visualize_menu(binary_data, encoded_data, transmitted_data, decoded_data, encoding_method, noise_level)
+        
         return output_data, binary_data, decoded_data
+    
+    def visualize_menu(self, binary_data, encoded_data, transmitted_data, decoded_data, encoding_method, noise_level):
+        """
+        Exibe um menu para selecionar quais gráficos visualizar.
+        """
+        while True:
+            print("\n===== MENU DE VISUALIZAÇÃO =====")
+            print("1. Visualizar dados binários originais")
+            print("2. Visualizar dados codificados")
+            print("3. Visualizar dados transmitidos (com ruído)")
+            print("4. Visualizar dados decodificados")
+            print("5. Visualizar todos os gráficos")
+            print("6. Voltar ao menu principal")
+            
+            try:
+                choice = int(input("\nEscolha uma opção (1-6): "))
+                
+                if choice == 1:
+                    print("\nOs dados representados são digitais (sequências de 0s e 1s).")
+                    self.encoder.visualize_waveform(binary_data, None, "Dados Binários Originais")
+                elif choice == 2:
+                    print("\nOs dados representados são digitais (codificados).")
+                    self.encoder.visualize_waveform(encoded_data, encoding_method, f"Dados Codificados ({encoding_method})")
+                elif choice == 3:
+                    print("\nOs dados representados são digitais (com possível ruído).")
+                    self.encoder.visualize_waveform(transmitted_data, None, f"Dados Transmitidos (Ruído: {noise_level})")
+                elif choice == 4:
+                    print("\nOs dados representados são digitais (recuperados após decodificação).")
+                    self.encoder.visualize_waveform(decoded_data, None, "Dados Decodificados")
+                elif choice == 5:
+                    print("\nTodos os dados representados são digitais em diferentes estágios do processo.")
+                    self.encoder.visualize_waveform(binary_data, None, "Dados Binários Originais")
+                    self.encoder.visualize_waveform(encoded_data, encoding_method, f"Dados Codificados ({encoding_method})")
+                    if noise_level > 0:
+                        self.encoder.visualize_waveform(transmitted_data, None, f"Dados Transmitidos (Ruído: {noise_level})")
+                    self.encoder.visualize_waveform(decoded_data, None, "Dados Decodificados")
+                elif choice == 6:
+                    break
+                else:
+                    print("Opção inválida, tente novamente.")
+            except ValueError:
+                print("Entrada inválida. Digite um número entre 1 e 6.")
 
 
 # Exemplo de uso
@@ -472,7 +502,7 @@ if __name__ == "__main__":
     ts = TransmissionSystem()
     
     # Dados de entrada
-    input_text = "Hello World!"
+    input_text = "Hello, World!"
     print(f"Texto original: {input_text}")
     
     # Lista de métodos disponíveis
@@ -510,3 +540,39 @@ if __name__ == "__main__":
         # Visualizar
         ts.encoder.visualize_waveform(manchester_encoded, "Manchester", 
                                    f"Exemplo {name}: {bits} codificado em Manchester")
+        
+def visualize_menu(self, binary_data: List[int], encoded_data: List[int],
+                   transmitted_data: List[int], decoded_data: List[int],
+                   encoding_method: str, noise_level: float) -> None:
+    """
+    Exibe um menu para o usuário escolher qual gráfico visualizar.
+    """
+    while True:
+        print("\nEscolha o gráfico que deseja visualizar:")
+        print("1 - Entrada Binária (original)")
+        print("2 - Sinal Codificado")
+        print("3 - Sinal Transmitido (com ruído)")
+        print("4 - Sinal Decodificado")
+        print("5 - Todos os gráficos")
+        print("0 - Sair da visualização")
+        
+        choice = input("Opção: ")
+        
+        if choice == "1":
+            self.encoder.visualize_waveform(binary_data, title="Entrada Binária (Original)")
+        elif choice == "2":
+            self.encoder.visualize_waveform(encoded_data, method=encoding_method, title="Sinal Codificado")
+        elif choice == "3":
+            self.encoder.visualize_waveform(transmitted_data, title=f"Sinal Transmitido (Ruído: {noise_level})")
+        elif choice == "4":
+            self.encoder.visualize_waveform(decoded_data, title="Sinal Decodificado")
+        elif choice == "5":
+            self.encoder.visualize_waveform(binary_data, title="Entrada Binária (Original)")
+            self.encoder.visualize_waveform(encoded_data, method=encoding_method, title="Sinal Codificado")
+            self.encoder.visualize_waveform(transmitted_data, title=f"Sinal Transmitido (Ruído: {noise_level})")
+            self.encoder.visualize_waveform(decoded_data, title="Sinal Decodificado")
+        elif choice == "0":
+            print("Encerrando visualização.")
+            break
+        else:
+            print("Opção inválida. Tente novamente.")
